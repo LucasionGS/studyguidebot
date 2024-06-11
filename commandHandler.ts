@@ -1,20 +1,43 @@
-import { type APIApplicationCommandOptionChoice, REST, Routes, SlashCommandBuilder } from "discord.js"
-import type { ApplicationCommandOptionBase, Client, CommandInteraction, User } from "discord.js";
+import { type APIApplicationCommandOptionChoice, REST, Routes, SlashCommandBuilder, InteractionType } from "discord.js"
+import type { ApplicationCommandOptionBase, CacheType, ChatInputCommandInteraction, Client, CommandInteraction, MessageComponentInteraction, User } from "discord.js";
+
+/**
+ * A map of MessageComponent callbacks with their ID as the key
+ */
+const messageComponentCallbacks = new Map<string, (interaction: MessageComponentInteraction<CacheType>) => void>();
+
+export function addMessageComponentCallback(id: string, callback: (interaction: MessageComponentInteraction<CacheType>) => void) {
+  messageComponentCallbacks.set(id, callback);
+}
+
+export function removeMessageComponentCallback(id: string): void;
+export function removeMessageComponentCallback(func: (interaction: MessageComponentInteraction<CacheType>) => void): void;
+export function removeMessageComponentCallback(id: string | ((interaction: MessageComponentInteraction<CacheType>) => void)) {
+  if (typeof id === "function") {
+    for (const [key, value] of messageComponentCallbacks) {
+      if (value === id) {
+        messageComponentCallbacks.delete(key);
+      }
+    }
+    return;
+  }
+  messageComponentCallbacks.delete(id);
+}
 
 /**
  * A map of commands and their respective callbacks
  */
 const commands = new Map<string, Command>();
-type CommandCallback = (interaction: CommandInteraction, user: User) => void;
+export type CommandCallback = (interaction: ChatInputCommandInteraction) => void;
 
-interface CommandArgument {
+export interface CommandArgument {
   name: string;
   description: string;
   required: boolean;
-  type?: "STRING" | "INTEGER" | "BOOLEAN" | "USER" | "CHANNEL" | "ROLE";
+  type?: "STRING" | "INTEGER" | "BOOLEAN" | "USER" | "CHANNEL" | "ROLE" | "ATTACHMENT";
 }
 
-interface Command {
+export interface Command {
   name: string;
   description: string;
   options: CommandArgument[];
@@ -42,16 +65,23 @@ export function addCommand(command: string, args: CommandArgument[], callback: C
  */
 export function setupCommandHandler(client: Client) {
   client.on("interactionCreate", (interaction) => {
-    if (
-      !interaction.isCommand()
-    ) return;
 
-    const { commandName } = interaction;
-
-    const command = commands.get(commandName);
-    if (!command) return;
-
-    command.callback(interaction, interaction.user);
+    console.log(InteractionType[interaction.type]);
+    
+    if (interaction.isChatInputCommand()) {
+      const { commandName } = interaction;
+  
+      const command = commands.get(commandName);
+      if (!command) return;
+  
+      command.callback(interaction);
+    }
+    else if (interaction.isMessageComponent()) {
+      const callback = messageComponentCallbacks.get(interaction.customId);
+      if (callback) {
+        callback(interaction);
+      }
+    }
   });
 
   // Set up the commands with Discord
@@ -95,6 +125,9 @@ export function setupCommandHandler(client: Client) {
           else if (type === "USER") {
             builder.addUserOption(o => setBasics(o, cOption));
           }
+          else if (type === "ATTACHMENT") {
+            builder.addAttachmentOption(o => setBasics(o, cOption));
+          }
           else {
             builder.addStringOption(o => setBasics(o, cOption));
           }
@@ -114,4 +147,9 @@ export function setupCommandHandler(client: Client) {
       console.error(error);
     }
   })();
+}
+
+export async function getGuildUser(interaction: ChatInputCommandInteraction, userId?: string) {
+  userId ??= interaction.user.id;
+  return interaction.guild!.members.cache.get(userId) || interaction.guild!.members.fetch(userId);
 }
