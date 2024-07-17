@@ -1,43 +1,63 @@
 import Helper from "./Helper";
 import yaml from "js-yaml";
-import { addCommand, addMessageComponentCallback, getGuildUser, type CommandArgument, type CommandCallback } from "./commandHandler";
+import { addCommand, addMessageComponentCallback, commands, getGuildUserByInteraction, type CommandArgument, type CommandCallback } from "./commandHandler";
 import { ActionRow, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentBuilder, EmbedBuilder, StringSelectMenuBuilder, type APIActionRowComponent, type APIMessageActionRowComponent, type Message } from "discord.js";
 
 //#region Command Definitions
 
 // Moderation Commands
 // Mute command
-addCommand("mute", [
-  { name: "user", description: "The user to mute", required: true, type: "USER" },
-  { name: "time", description: "Duration to mute the user", required: true, type: "STRING" }
-], async (int) => {
+// addCommand("mute", [
+//   { name: "user", description: "The user to mute", required: true, type: "USER" },
+//   { name: "time", description: "Duration to mute the user", required: true, type: "STRING" }
+// ], async (int) => {
 
-  const sender = await getGuildUser(int);
-  if (sender.permissions.has("MuteMembers")) {
-    int.reply("You do not have permission to use this command.");
+//   const sender = await getGuildUser(int);
+//   if (!sender.permissions.has("MuteMembers", true)) {
+//     int.reply("You do not have permission to use this command.");
+//     return;
+//   }
+  
+//   const user = int.options.getUser("user", true);
+//   const time = int.options.getString("time", true);
+
+//   if (!user || !time) {
+//     int.reply("Usage: /mute <user> <time>");
+//     return;
+//   }
+
+//   try {
+//     const guildUser = await getGuildUser(int, user.id);
+//     guildUser.edit({ mute: true });
+//     setTimeout(() => {
+//       guildUser.edit({ mute: false });
+//     }, Helper.resolveTimeString(time));
+  
+//     // Implement mute logic here
+//     int.reply(`User ${user.username} has been muted for ${time}.`);
+//   } catch (error) {
+//     int.reply("An error occurred while trying to mute the user.");
+//   }
+// });
+
+addCommand("help", [
+  { name: "command", description: "The command to get help for", required: false, type: "STRING" }
+], (int) => {
+  const command = int.options.getString("command");
+  if (!command) {
+    const commandList = Array.from(commands.keys()).map(a => `**${a}**`).join(", ");
+    int.reply(`Available commands: ${commandList}`);
     return;
   }
-  
-  const user = int.options.getUser("user", true);
-  const time = int.options.getString("time", true);
 
-  if (!user || !time) {
-    int.reply("Usage: /mute <user> <time>");
+  const commandData = commands.get(command);
+  if (!commandData) {
+    int.reply(`Command ${command} not found.`);
     return;
   }
 
-  try {
-    const guildUser = await getGuildUser(int, user.id);
-    guildUser.edit({ mute: true });
-    setTimeout(() => {
-      guildUser.edit({ mute: false });
-    }, Helper.resolveTimeString(time));
-  
-    // Implement mute logic here
-    int.reply(`User ${user.username} has been muted for ${time}.`);
-  } catch (error) {
-    int.reply("An error occurred while trying to mute the user.");
-  }
+  const args = commandData.options.map(arg => `${arg.name}: ${arg.description}`).join("\n");
+  int.reply(`Command ${command}:\n${args}`);
 });
 
 // Ban command
@@ -45,9 +65,8 @@ addCommand("ban", [
   { name: "user", description: "The user to ban", required: true, type: "USER" },
   { name: "reason", description: "Reason for the ban", required: true, type: "STRING" }
 ], async (int) => {
-
-  const sender = await getGuildUser(int);
-  if (sender.permissions.has("BanMembers")) {
+  const sender = await getGuildUserByInteraction(int);
+  if (!sender.permissions.has("BanMembers", true)) {
     int.reply("You do not have permission to use this command.");
     return;
   }
@@ -61,7 +80,7 @@ addCommand("ban", [
   }
 
   try {
-    const guildUser = await getGuildUser(int, user.id);
+    const guildUser = await getGuildUserByInteraction(int, user.id);
     await guildUser.ban({ reason: reason });
   
     // Implement ban logic here
@@ -75,7 +94,7 @@ addCommand("ban", [
 
 // Resource command
 addCommand("resources", [
-  { name: "topic", description: "The topic to get resources for", required: true, type: "STRING" }
+  { name: "topic", description: "The topic to get resources for", required: false, type: "STRING" }
 ], (int) => {
   const topic = int.options.getString("topic");
   
@@ -113,6 +132,11 @@ interface AnsweredQuestion extends Question {
     answer: string;
   }[]
 }
+
+const questionMessages: Record<string, {
+  message: Message,
+  question: AnsweredQuestion
+}> = {};
 
 // Questionaire
 addCommand("questions", [
@@ -157,11 +181,6 @@ addCommand("questions", [
     );
     return;
   }
-
-  const questionMessages: Record<string, {
-    message: Message,
-    question: AnsweredQuestion
-  }> = {};
   
   try {
     const content = await fetch(config.url).then(res => res.text());
@@ -207,9 +226,27 @@ addCommand("questions", [
         })));
       }
 
+      const answeredQuestion: AnsweredQuestion = { ...question, response: [] };
+
       addMessageComponentCallback(customId, async (interaction) => {
-        const user = interaction.user;
-        await interaction.reply(`${user.username} selected!`);
+        if (interaction.isStringSelectMenu()) {
+          // Get selected answer
+          const selectedAnswer = interaction.values;
+          const user = interaction.user;
+          answeredQuestion.response = answeredQuestion.response.filter(response => response.userId !== user.id);
+          selectedAnswer.forEach(answer => {
+            answeredQuestion.response.push({ userId: user.id, answer: answer });
+          });
+          const users = [...new Set(answeredQuestion.response.map(response => response.userId))];
+          questionMessage.edit({
+            content: "Responses: " + users.length,
+          });
+          interaction.reply({
+            content: "Answer submitted!",
+
+            ephemeral: true
+          });
+        }
       });
       
       const actionRow = new ActionRowBuilder().addComponents(buttons);
@@ -225,8 +262,6 @@ addCommand("questions", [
           actionRow as any // Discord.js typings are incorrect it seems, or I'm using it wrong, but this works lol
         ]
       });
-
-      const answeredQuestion: AnsweredQuestion = { ...question, response: [] };
       
       questionMessages[questionMessage.id] = { message: questionMessage, question: answeredQuestion };
     }
@@ -237,5 +272,41 @@ addCommand("questions", [
     int.reply(`Failed to parse YAML: ${e.message}`);
   }
 });
+
+// Get question responses
+addCommand("responses", [
+  { name: "question_message_id", description: "The ID of the question message", required: true, type: "STRING" }
+], async (int) => {
+  const questionId = int.options.getString("question_message_id");
+  const questionMessage = questionId && questionMessages[questionId];
+  if (!questionMessage) {
+    int.reply("Invalid question ID.");
+    return;
+  }
+
+  const responses = questionMessage.question.response;
+  if (responses.length == 0) {
+    int.reply("No responses yet.");
+    return;
+  }
+
+  const groupByUser = responses.reduce((acc, response) => {
+    if (!acc[response.userId]) {
+      acc[response.userId] = [];
+    }
+    acc[response.userId].push(response.answer);
+    return acc;
+  }, {} as Record<string, string[]>);
+
+  const responseString = Object.entries(groupByUser).map(([userId, answers]) => {
+    return `User <@${userId}> answered: ${answers.join(", ")}`;
+  }).join("\n");
+  int.reply({
+    content: `Responses:\n${responseString}`,
+    ephemeral: true
+  });
+});
+
+// 
 
 //#endregion

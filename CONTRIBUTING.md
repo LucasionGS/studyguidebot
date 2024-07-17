@@ -32,7 +32,7 @@ This app is designed to run using Bun. It should work perfectly fine using Node.
     bun run index.ts
     ```
 4. **Invite the Bot to Your Server**:
-    - Create a new Discord application and bot.
+    - Create a new Discord application and bot. [Discord Developer Applications](https://discord.com/developers/applications)
     - Copy the bot token and paste it in the `.env` file.
     - Use the following link to invite the bot to your server:
       ```

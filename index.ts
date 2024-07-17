@@ -6,6 +6,7 @@ const client = new Discord.Client({
   intents: [
     Discord.IntentsBitField.Flags.Guilds,
     Discord.IntentsBitField.Flags.GuildMessages,
+    Discord.IntentsBitField.Flags.MessageContent,
   ]
 });
 

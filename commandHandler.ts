@@ -27,7 +27,7 @@ export function removeMessageComponentCallback(id: string | ((interaction: Messa
 /**
  * A map of commands and their respective callbacks
  */
-const commands = new Map<string, Command>();
+export const commands = new Map<string, Command>();
 export type CommandCallback = (interaction: ChatInputCommandInteraction) => void;
 
 export interface CommandArgument {
@@ -149,7 +149,7 @@ export function setupCommandHandler(client: Client) {
   })();
 }
 
-export async function getGuildUser(interaction: ChatInputCommandInteraction, userId?: string) {
+export async function getGuildUserByInteraction(interaction: ChatInputCommandInteraction, userId?: string) {
   userId ??= interaction.user.id;
   return interaction.guild!.members.cache.get(userId) || interaction.guild!.members.fetch(userId);
 }
