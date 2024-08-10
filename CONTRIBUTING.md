@@ -1,6 +1,6 @@
-# Contributing to [Your Bot Name]
+# Contributing to the bot
 
-Thank you for considering contributing to [Your Bot Name]! We welcome all levels of programming experience. Here's how you can contribute:
+Thank you for considering contributing to the bot. All levels of programming experience. Here's how you can contribute:
 
 ## Getting Started
 
