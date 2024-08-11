@@ -1,6 +1,7 @@
 import Discord from "discord.js";
 import { setupCommandHandler } from "./commandHandler";
 import "./commands";
+import "./sequelize";
 
 const client = new Discord.Client({
   intents: [
