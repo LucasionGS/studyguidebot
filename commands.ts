@@ -2,6 +2,12 @@ import Helper from "./Helper";
 import yaml from "js-yaml";
 import { addCommand, addMessageComponentCallback, commands, getGuildUserByInteraction, type CommandArgument, type CommandCallback } from "./commandHandler";
 import { ActionRow, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentBuilder, EmbedBuilder, StringSelectMenuBuilder, type APIActionRowComponent, type APIMessageActionRowComponent, type Message } from "discord.js";
+import * as users from './users';
+import { checkSpamLink } from "./spamlink";
+import { updateUserRole } from "./roles";
+
+const resourcesFilePath: string = path.join(__dirname, 'resources.json');
+
 
 //#region Command Definitions
 
@@ -65,59 +71,380 @@ addCommand("ban", [
   { name: "user", description: "The user to ban", required: true, type: "USER" },
   { name: "reason", description: "Reason for the ban", required: true, type: "STRING" }
 ], async (int) => {
-  const sender = await getGuildUserByInteraction(int);
-  if (!sender.permissions.has("BanMembers", true)) {
-    int.reply("You do not have permission to use this command.");
-    return;
-  }
-  
-  const user = int.options.getUser("user");
-  const reason = int.options.getString("reason");
-
-  if (!user || !reason) {
-    int.reply("Usage: /ban <user> <reason>");
-    return;
-  }
-
   try {
-    const guildUser = await getGuildUserByInteraction(int, user.id);
-    await guildUser.ban({ reason: reason });
-  
-    // Implement ban logic here
-    int.reply(`User ${user.username} has been banned for ${reason}.`);
-  } catch (error) {
-    int.reply("An error occurred while trying to ban the user.");
-  }
+      const sender = await getGuildUserByInteraction(int);
+      if (!sender.permissions.has("BanMembers",true)) {
+         await int.reply("You do not have permission to use this command.");
+         return;
+      }
+
+      const user = int.options.getUser("user");
+      const reason = int.options.getString("reason");
+      if (!user || !reason) {
+         await int.reply("Usage: /ban <user> <reason>");
+         return;
+      }
+
+      // Check if the user to be banned has a role higher than the bot's role
+      const guildUser = await getGuildUserByInteraction(int, user.id);
+      if (guildUser.roles.highest.position >= sender.roles.highest.position) {
+         await int.reply("You cannot ban this user because their role is higher or equal to yours.");
+         return;
+      }
+
+      await guildUser.ban({
+         reason
+      });
+    await int.reply(`User ${user.username} has been banned for ${reason}.`);
+   } catch (error) {
+      console.error(error);
+      await int.reply("An error occurred while trying to ban the user.");
+   }
+});
+
+// Kick command
+addCommand("kick", [{
+   name: "user",
+   description: "The user to kick",
+   required: true,
+   type: "USER"
+}, {
+   name: "reason",
+   description: "Reason for the kick",
+   required: false,
+   type: "STRING"
+}], async (int) => {
+   try {
+      const sender = await getGuildUserByInteraction(int);
+      if (!sender.permissions.has("KickMembers", true)) {
+         await int.reply("You do not have permission to use this command.");
+         return;
+      }
+
+      const user = int.options.getUser("user");
+      const reason = int.options.getString("reason") || "No reason provided";
+      if (!user) {
+         await int.reply("Usage: /kick <user> [reason]");
+         return;
+      }
+
+      // Check if the user to be kicked has a role higher than the bot's role
+      const guildUser = await getGuildUserByInteraction(int, user.id);
+      if (guildUser.roles.highest.position >= sender.roles.highest.position) {
+         await int.reply("You cannot kick this user because their role is higher or equal to yours.");
+         return;
+      }
+
+      await guildUser.kick(reason);
+      await int.reply(`User ${user.username} has been kicked for ${reason}.`);
+   } catch (error) {
+      console.error("An error occurred in the kick command:", error);
+
+      // This message ensures the server continues running even if there is an error.
+      await int.reply("An error occurred while trying to kick the user. Please try again later.");
+   }
 });
 
 // Helpful Commands
 
-// Resource command
-addCommand("resources", [
-  { name: "topic", description: "The topic to get resources for", required: false, type: "STRING" }
-], (int) => {
-  const topic = int.options.getString("topic");
-  
-  // Provide resources based on the topic
-  const resources: Record<string, string[]> = {
-    javascript: ["https://developer.mozilla.org/en-US/docs/Web/JavaScript"],
-    typescript: ["https://www.typescriptlang.org/docs/"],
-    // Add more resources here
-  };
+// # please improve `interface` if aren't added
 
-  if (!topic) {
-    int.reply("Usage: /resources <topic>");
-    return;
-  }
+// Simple URL validation function using regex
+function isValidUrl(url: string): boolean {
+   const urlPattern: RegExp = /^(https?:\/\/)?([\w\d\-_]+\.)+[a-z]{2,6}(\/[\w\d\-_\.]*)*$/i;
+   return urlPattern.test(url);
+}
 
+// Simple sanitization function
+function sanitizeInput(input: string): string {
+   return input.trim().toLowerCase();
+}
 
-  const resourceLinks = resources[topic.toLowerCase()] || null;
-  if (!resourceLinks) {
-    int.reply(`No resources found for ${topic}`);
-    return;
-  }
-  int.reply(`Here are some resources for ${topic}: \n  ${resourceLinks.join("\n  ")}`);
+// profile command 
+
+addCommand("profile", [], async (int) => {
+   const userId = int.user.id; // Get the Discord user ID
+   const username = int.user.username; // Get the username of the person requesting the profile
+
+   try {
+      // Load user data
+      let userData = users.loadUserData(userId);
+      
+      // Create an embed with the user's profile information
+      const embed = new EmbedBuilder()
+      .setTitle(`💫  @**${username}'s Profile**  💫`)
+      .setColor(0xFFD700)
+      .setDescription(
+         `◉⁠ **Submissions:** ${userData.submission}\n` +
+         `◉⁠ **Level:** ${userData.level}\n` +
+         `◉⁠ **Pending Submissions:** ${userData.submissionPending}\n` +
+         `◉⁠ **Roles:** ${userData.roles[0] || 'None'}\n` +
+         `◉⁠ **Tokens:** ✪ ${userData.tokens || 0} \n`
+      );
+
+      // Send the embed as a reply
+      await int.reply({
+         embeds: [embed]
+      });
+      return;
+
+   } catch (error) {
+      // Log the error to a file or console for debugging
+      console.error(error);
+
+      // Check if the error is due to Discord API/network issues
+      if (error.name === 'DiscordAPIError') {
+         await int.reply("⚠️ There was an issue connecting to Discord's servers. Please try again later.");
+         return;
+      }
+
+      // Handle file system errors (e.g., issues with reading or writing user data)
+      if (error.code === 'ENOENT') {
+         await int.reply("⚠️ An issue occurred while accessing your profile data. Please try again later.");
+         return;
+      }
+
+      // Generic error message for any other issues
+      await int.reply("⚠️ An unexpected error occurred while retrieving your profile. Please try again later.");
+      return;
+   }
 });
+
+// dailyReward command 
+
+addCommand("dailyreward", [], async (int) => {
+   const userId = int.user.id; // Get the Discord user ID
+   const username = int.user.username; // Get the username of the person claiming the reward
+   try {
+      // Load user data
+      let userData = users.loadUserData(userId);
+
+      // Check if the user has already claimed the daily reward
+      if (userData.dailyRewardClaimed && Helper.isToday(userData.lastClaimed)) {
+         await int.reply("You have already claimed your daily reward today. Come back tomorrow!");
+         return;
+      }
+
+      // Add 20 tokens to the user's account
+      if (!userData.tokens) {
+         userData.tokens = 0; // Initialize tokens if not present
+      }
+      userData.tokens += 20;
+
+      // Update the user's last claimed date and dailyRewardClaimed status
+      userData.dailyRewardClaimed = true;
+      userData.lastClaimed = Helper.getCurrentDate();
+
+      // Save the updated user data
+      users.saveUserData(userId, userData);
+
+      // Reply with a confirmation message
+      await int.reply(`🎁  ${username}, you have successfully claimed ✪ 20 tokens! 🎉 \nYou now have ✪ ${userData.tokens} tokens.`);
+      return;
+   } catch (error) {
+      console.error(error);
+      await int.reply("An error occurred while claiming your daily reward.");
+      return;
+   }
+});
+
+// SubmitResources command 
+
+addCommand("submitresource", [{
+   name: "subject",
+   description: "The subject of the resource (i.e. css)",
+   required: true,
+   type: "STRING"
+},
+   {
+      name: "link",
+      description: "The link to the resource",
+      required: true,
+      type: "STRING"
+   },
+   {
+      name: "topic",
+      description: "A topic related to the resource (max 25 characters, i.e. grid)",
+      required: false,
+      type: "STRING"
+   },
+   {
+      name: "description",
+      description: "A brief description of the resource (max 150 characters)",
+      required: false,
+      type: "STRING"
+   }], async (int) => {
+   await int.deferReply(); // Acknowledge the interaction immediately
+
+   const subject = sanitizeInput(int.options.getString("subject"));
+   const topic = sanitizeInput(int.options.getString("topic") || "");
+   const link = sanitizeInput(int.options.getString("link"));
+   const description = sanitizeInput(int.options.getString("description") || "");
+   const addedBy = int.user.username; // Username of the person who added the resource
+   const userId = int.user.id; // User ID of the person who added the resource
+
+   // Validate URL
+   if (!isValidUrl(link)) {
+      return int.editReply("The provided link is not a valid URL. Please ensure it starts with http:// or https://.");
+   }
+   // Validate description if provided
+   if (description && !Helper.isValidDescription(description)) {
+      return int.editReply("The description is invalid. It should only contain alphanumeric characters and specific symbols and be at most 150 characters long.");
+   }
+   // Validate topic if provided
+   if (topic.length > 25) {
+      return int.editReply("The topic is too long. It should be at most 25 characters.");
+   }
+
+   try {
+      // Read existing data from the JSON file
+      let resources = [];
+      if (fs.existsSync(resourcesFilePath)) {
+         const data = fs.readFileSync(resourcesFilePath, 'utf8');
+         resources = JSON.parse(data);
+      }
+
+      // Add the new entry (include contributer name — create a new key)
+      resources.push({
+         subject: subject,
+         link: link,
+         description: description || null, // Store as null if not provided
+         topic: topic || null, // Store as null if not provided
+         addedBy: userId, // Include user ID
+         approved: false, // Default value for approved field
+         approver: null
+      });
+
+      // Write the updated data back to the JSON file
+      fs.writeFileSync(resourcesFilePath, JSON.stringify(resources, null, 2), 'utf8');
+
+      // Update user data to increment submissionPending
+      let userData = users.loadUserData(userId);
+      userData.submissionPending = (userData.submissionPending || 0) + 1; // Initialize if undefined
+      users.saveUserData(userId, userData);
+
+      // Reply with a confirmation message
+      return int.editReply(`Resource successfully added! 🎉\n\n**subject:** ${subject}\n**topic:** ${topic || "N/A"}\n**Link:** \`${link}\`\n\nThank you for your contribution! Once your submission is approved, you will be awarded ✪ 20 points and will level up. Your pending submissions count is now ${userData.submissionPending}. Keep up the great work! 🚀`);
+
+   } catch (error) {
+      console.error("Error adding resource:", error);
+
+      if (error instanceof SyntaxError) {
+         return int.editReply("There was an error processing the data. Please try again.");
+      } else if (error.code === 'ENOENT') {
+         return int.editReply("The resources file is missing. Please contact support.");
+      } else if (error.code === 'EACCES') {
+         return int.editReply("Permission denied. Unable to write to the resources file.");
+      } else {
+         return int.editReply("An unexpected error occurred. Please try again later.");
+      }
+   }
+});
+
+// Resource command
+addCommand("resources", [{
+   name: "subject",
+   description: "The subject to get resources for",
+   required: true,
+   type: "STRING"
+}, {
+   name: "topic",
+   description: "The topic to get resources for",
+   required: false,
+   type: "STRING"
+}], async (int) => {
+   try {
+      // Acknowledge the interaction to avoid timeout
+      await int.deferReply({
+         ephemeral: true
+      });
+
+      // Retrieve and trim input options
+      const subject = int.options.getString("subject")?.trim().toLowerCase();
+      const topic = int.options.getString("topic")?.trim().toLowerCase() || "";
+
+      // Load resources from the file
+      let resources = [];
+      if (fs.existsSync(resourcesFilePath)) {
+         const data = fs.readFileSync(resourcesFilePath, 'utf8');
+         resources = JSON.parse(data);
+      }
+
+      // Filter resources based on subject and topic not very very efficient but okay
+      let filteredResources = resources.filter(resource => {
+         const matchessubject = resource.subject.toLowerCase().includes(subject);
+         const matchestopic = !topic || resource.topic?.toLowerCase().includes(topic) || resource.description?.toLowerCase().includes(topic);
+         return matchessubject && matchestopic && resource.approved
+      }).sort((a, b) => {
+         const asubjectMatch = a.subject.toLowerCase().includes(subject);
+         const atopicMatch = topic && (a.topic?.toLowerCase().includes(topic) || a.description?.toLowerCase().includes(topic));
+
+         const bsubjectMatch = b.subject.toLowerCase().includes(subject);
+         const btopicMatch = topic && (b.topic?.toLowerCase().includes(topic) || b.description?.toLowerCase().includes(topic));
+
+         // Prioritize resources where both subject and topic match
+         if (asubjectMatch && atopicMatch && !(bsubjectMatch && btopicMatch)) {
+            return -1; // a moves above b
+         }
+         if (!(asubjectMatch && atopicMatch) && bsubjectMatch && btopicMatch) {
+            return 1; // b moves above a
+         }
+         return 0; // no change in order
+      }).slice(0,
+         5); // Limit the results to a maximum of 5 resources
+
+      // Handle case with no matching resources
+      if (filteredResources.length === 0) {
+         await int.editReply({
+            content: `🔍 No resources found for subject **"${subject}"** and topic **"${topic || "any"}"**. Would you like to contribute? Use the command \`/submitresource\` to add a new resource.`,
+         });
+         return;
+      }
+
+      const embed = new EmbedBuilder()
+      .setTitle(`📚 Resources Found`)
+      .setDescription(`Here are some resources for the **subject**: **"${subject}"**${topic ? ` and **topic**: **"${topic}"**`: ''}.`)
+      .setColor('#423eef') // Customize the color
+      .setTimestamp();
+
+      filteredResources.forEach(resource => {
+
+         //addedBy gives UID not name (modify this)
+
+         embed.addFields(
+            {
+               name: '📒 ~☆ subject ☆~', value: resource.subject.toUpperCase() +'\n', inline: true
+            },
+            {
+               name: '📑  topic', value: resource.topic || "N/A", inline: true
+            },
+            {
+               name: '🔗  LINK', value: `${resource.link}`, inline: false
+            },
+            {
+               name: '📄  DESCRIPTION', value: resource.description || "No description provided", inline: false
+            },
+            {
+               name: '👤  ADDED BY', value: `@${resource.addedBy}`, inline: false
+            },
+            {
+               name: '\u200b', value: '\u200b', inline: false
+            }
+         );
+      })
+
+      // Send the embed
+      await int.editReply({
+         embeds: [embed]
+      });
+   } catch (error) {
+      console.error('Error handling interaction:', error);
+      await int.editReply({
+         content: "⚠️ An unexpected error occurred while processing your request. Please try again later.",
+      });
+   }
+});
+
 
 // Fun Commands
 
