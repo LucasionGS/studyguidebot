@@ -42,6 +42,36 @@ namespace Helper {
 
     return totalMilliseconds;
   }
+  
+   /**
+   * Checks if the given date is today.
+   * @param {string | Date} date - The date to check. Can be a string or a Date object.
+   * @returns {boolean} - True if the date is today, otherwise false.
+   */
+  export function isToday(date: string | Date): boolean {
+    const today = new Date();
+    const givenDate = new Date(date);
+    return today.toDateString() === givenDate.toDateString();
+  }
+  
+   /**
+   * Get the current date as a string.
+   * @returns {string} - The current date in ISO format
+   */
+   export function getCurrentDate(): string {
+      return new Date().toISOString();
+   }
+   
+   /**
+   * Validate the description to allow only specific characters.
+   * @param {string} description - The description to validate.
+   * @returns {boolean} - True if valid, false otherwise.
+   */
+   export function isValidDescription(description: string):boolean {
+      const regex = /^[a-zA-Z0-9 !#?+\-_:!"'{}[\]%]*$/;
+      return regex.test(description) && description.length <= 150;
+   }
+   
 }
 
 export default Helper;
