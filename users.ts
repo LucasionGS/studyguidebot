@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Define the path to the single JSON file where all user data will be stored (create new tables in sqlite)
 const usersFilePath: string = path.join(__dirname, 'users.json');

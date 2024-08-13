@@ -23,7 +23,6 @@ async function validateUrl(websiteUrl: string): Promise<{ valid: boolean; redire
       const parsedUrl = new URL(websiteUrl);
 
       if (parsedUrl.protocol === 'https:') {
-        // HTTPS URL, check SSL certificate and redirection
         const req = https.request(
           websiteUrl,
           { method: 'HEAD' },
@@ -39,17 +38,16 @@ async function validateUrl(websiteUrl: string): Promise<{ valid: boolean; redire
         );
 
         req.on('error', (e) => {
-          console.error(`Problem with request: ${e.message}`);
+          console.error(`Problem with request: ${(e as Error).message}`);
           resolve({ valid: false, redirect: false });
         });
 
         req.end();
       } else {
-        // HTTP URL, consider as potentially insecure
         resolve({ valid: false, redirect: false });
       }
     } catch (e) {
-      console.error(`Invalid URL: ${e.message}`);
+      console.error(`Invalid URL: ${(e as Error).message}`);
       resolve({ valid: false, redirect: false });
     }
   });
@@ -60,7 +58,7 @@ function decodeUrl(urlString: string): string {
   try {
     return decodeURIComponent(urlString);
   } catch (e) {
-    console.error(`Failed to decode URL: ${e.message}`);
+    console.error(`Failed to decode URL: ${(e as Error).message}`);
     return urlString;
   }
 }

@@ -1,10 +1,13 @@
 import Helper from "./Helper";
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import { addCommand, addMessageComponentCallback, commands, getGuildUserByInteraction, type CommandArgument, type CommandCallback } from "./commandHandler";
 import { ActionRow, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentBuilder, EmbedBuilder, StringSelectMenuBuilder, type APIActionRowComponent, type APIMessageActionRowComponent, type Message } from "discord.js";
 import * as users from './users';
 import { checkSpamLink } from "./spamlink";
 import { updateUserRole } from "./roles";
+
+import * as fs from 'fs';
+import * as path from 'path';
 
 const resourcesFilePath: string = path.join(__dirname, 'resources.json');
 
@@ -192,17 +195,14 @@ addCommand("profile", [], async (int) => {
       // Log the error to a file or console for debugging
       console.error(error);
 
-      // Check if the error is due to Discord API/network issues
-      if (error.name === 'DiscordAPIError') {
-         await int.reply("⚠️ There was an issue connecting to Discord's servers. Please try again later.");
-         return;
-      }
+     if (error instanceof Error) {
+  // Type guard for Error type
+  if (error.name === 'DiscordAPIError') {
+    await int.reply("⚠️ There was an issue connecting to Discord's servers. Please try again later.");
+    return;
+   }
+   }
 
-      // Handle file system errors (e.g., issues with reading or writing user data)
-      if (error.code === 'ENOENT') {
-         await int.reply("⚠️ An issue occurred while accessing your profile data. Please try again later.");
-         return;
-      }
 
       // Generic error message for any other issues
       await int.reply("⚠️ An unexpected error occurred while retrieving your profile. Please try again later.");
@@ -276,17 +276,32 @@ addCommand("submitresource", [{
    }], async (int) => {
    await int.deferReply(); // Acknowledge the interaction immediately
 
-   const subject = sanitizeInput(int.options.getString("subject"));
+   const subject = int.options.getString("subject");
+   if (subject !== null) {
+  sanitizeInput(subject);
+   } else {
+  // Handle null case for subject
+  await int.reply("⚠️ Subject is missing.");
+  }
+   
    const topic = sanitizeInput(int.options.getString("topic") || "");
-   const link = sanitizeInput(int.options.getString("link"));
+   
+   const link = int.options.getString("link");
+   if (link !== null) {
+   sanitizeInput(link);
+   } else {
+  // Handle null case for link
+  await int.reply("⚠️ Link is missing.");
+  }
+   
    const description = sanitizeInput(int.options.getString("description") || "");
    const addedBy = int.user.username; // Username of the person who added the resource
    const userId = int.user.id; // User ID of the person who added the resource
 
    // Validate URL
-   if (!isValidUrl(link)) {
-      return int.editReply("The provided link is not a valid URL. Please ensure it starts with http:// or https://.");
-   }
+   if (link === null || !isValidUrl(link)) {
+  return int.editReply("The provided link is not a valid URL. Please ensure it starts with http:// or https://.");
+  }
    // Validate description if provided
    if (description && !Helper.isValidDescription(description)) {
       return int.editReply("The description is invalid. It should only contain alphanumeric characters and specific symbols and be at most 150 characters long.");
@@ -331,10 +346,6 @@ addCommand("submitresource", [{
 
       if (error instanceof SyntaxError) {
          return int.editReply("There was an error processing the data. Please try again.");
-      } else if (error.code === 'ENOENT') {
-         return int.editReply("The resources file is missing. Please contact support.");
-      } else if (error.code === 'EACCES') {
-         return int.editReply("Permission denied. Unable to write to the resources file.");
       } else {
          return int.editReply("An unexpected error occurred. Please try again later.");
       }
@@ -342,6 +353,17 @@ addCommand("submitresource", [{
 });
 
 // Resource command
+interface Resource {
+  subject: string;
+  link: string;
+  description: string;
+  topic: string;
+  addedBy: string;
+  approved: boolean;
+  approver: string | null;
+}
+
+
 addCommand("resources", [{
    name: "subject",
    description: "The subject to get resources for",
@@ -371,27 +393,29 @@ addCommand("resources", [{
       }
 
       // Filter resources based on subject and topic not very very efficient but okay
-      let filteredResources = resources.filter(resource => {
-         const matchessubject = resource.subject.toLowerCase().includes(subject);
-         const matchestopic = !topic || resource.topic?.toLowerCase().includes(topic) || resource.description?.toLowerCase().includes(topic);
-         return matchessubject && matchestopic && resource.approved
-      }).sort((a, b) => {
-         const asubjectMatch = a.subject.toLowerCase().includes(subject);
-         const atopicMatch = topic && (a.topic?.toLowerCase().includes(topic) || a.description?.toLowerCase().includes(topic));
+      let filteredResources = resources
+  .filter((resource: Resource) => {
+    const matchessubject = resource.subject?.toLowerCase().includes(subject?.toLowerCase() || '') ?? false;
+    const matchestopic = !topic || resource.topic?.toLowerCase().includes(topic.toLowerCase()) || resource.description?.toLowerCase().includes(topic.toLowerCase());
+    return matchessubject && matchestopic && resource.approved;
+  })
+  .sort((a: Resource, b: Resource) => {
+    const asubjectMatch = a.subject?.toLowerCase().includes(subject?.toLowerCase() || '') ?? false;
+    const atopicMatch = topic && (a.topic?.toLowerCase().includes(topic.toLowerCase()) || a.description?.toLowerCase().includes(topic.toLowerCase()));
 
-         const bsubjectMatch = b.subject.toLowerCase().includes(subject);
-         const btopicMatch = topic && (b.topic?.toLowerCase().includes(topic) || b.description?.toLowerCase().includes(topic));
+    const bsubjectMatch = b.subject?.toLowerCase().includes(subject?.toLowerCase() || '') ?? false;
+    const btopicMatch = topic && (b.topic?.toLowerCase().includes(topic.toLowerCase()) || b.description?.toLowerCase().includes(topic.toLowerCase()));
 
-         // Prioritize resources where both subject and topic match
-         if (asubjectMatch && atopicMatch && !(bsubjectMatch && btopicMatch)) {
-            return -1; // a moves above b
-         }
-         if (!(asubjectMatch && atopicMatch) && bsubjectMatch && btopicMatch) {
-            return 1; // b moves above a
-         }
-         return 0; // no change in order
-      }).slice(0,
-         5); // Limit the results to a maximum of 5 resources
+    // Prioritize resources where both subject and topic match
+    if (asubjectMatch && atopicMatch && !(bsubjectMatch && btopicMatch)) {
+      return -1; // a moves above b
+    }
+    if (!(asubjectMatch && atopicMatch) && bsubjectMatch && btopicMatch) {
+      return 1; // b moves above a
+    }
+    return 0; // no change in order
+  })
+  .slice(0, 5); // Limit the results to a maximum of 5 resources
 
       // Handle case with no matching resources
       if (filteredResources.length === 0) {
@@ -407,7 +431,7 @@ addCommand("resources", [{
       .setColor('#423eef') // Customize the color
       .setTimestamp();
 
-      filteredResources.forEach(resource => {
+      filteredResources.forEach((resource: Resource) => {
 
          //addedBy gives UID not name (modify this)
 

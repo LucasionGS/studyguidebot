@@ -6,9 +6,6 @@ import * as users from './users';
 import { checkSpamLink } from "./spamlink";
 import { updateUserRole } from "./roles";
 
-import fs from 'fs';
-import path from 'path';
-
 //require('dotenv').config();
 
 const client = new Discord.Client({
@@ -28,12 +25,12 @@ client.login(DISCORD_TOKEN);
 
 
 // Event listener for each new messages
-client.on('messageCreate', async (message: Message) => {
+client.on('messageCreate', async (message) => {
   if (message.author.bot) return; // Ignore bot messages
   await checkSpamLink(message);
   
   const channel = client.channels.cache.get(message.channel.id);
-  if(channel && channel.isTextBased()) {
+  if(channel && channel.isTextBased() && channel instanceof Discord.TextChannel) {
   await updateUserRole(message, channel, message.author.id);
   }
 });

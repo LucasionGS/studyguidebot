@@ -1,11 +1,13 @@
-import { Guild, Role, TextChannel, GuildMember } from 'discord.js';
-import { users } from './users';
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, Guild, Role, TextChannel, GuildMember } from 'discord.js';
+import * as users from './users';
+import type { ColorResolvable } from 'discord.js';
+
+const DEFAULT_COLOR: ColorResolvable = '#ffffff';
 
 interface RoleDefinition {
     level: number;
     name: string;
-    color: string | undefined;
+    color?: ColorResolvable;
 }
 
 const roles: RoleDefinition[] = [
@@ -22,17 +24,24 @@ async function ensureRolesExist(guild: Guild): Promise<void> {
         if (!guild.roles.cache.some(r => r.name === role.name)) {
             await guild.roles.create({
                 name: role.name,
-                color: role.color,
+                color: role.color || DEFAULT_COLOR,
                 permissions: [], // Empty array as a placeholder; adjust as necessary
             });
         }
     }
 }
 
-async function updateUserRole(message: { guild: Guild; }, channel: TextChannel, userId: string): Promise<boolean> {
+async function updateUserRole(message: { guild: Guild | null; }, channel: TextChannel, userId: string): Promise<boolean> {
+    // Check if guild is null
+    if (!message.guild) {
+        console.error('Guild not found');
+        return false;
+    }
+
+    const guild = message.guild; // Extract guild from message
     const user = users.loadUserData(userId);
     const userLevel = user.level;
-    const member: GuildMember | undefined = message.guild.members.cache.get(userId);
+    const member = guild.members.cache.get(userId);
 
     if (!member) {
         console.error('Member not found');
@@ -40,7 +49,7 @@ async function updateUserRole(message: { guild: Guild; }, channel: TextChannel, 
     }
 
     // Ensure all required roles exist in the guild
-    await ensureRolesExist(message.guild);
+    await ensureRolesExist(guild);
 
     const currentRoles = member.roles.cache;
     const rolesToAdd = roles.filter(r => userLevel >= r.level).reverse();
@@ -59,7 +68,7 @@ async function updateUserRole(message: { guild: Guild; }, channel: TextChannel, 
     try {
         await member.roles.remove(rolesToRemove.map(role => role.id));
         if (newRole) {
-            const role = member.guild.roles.cache.find(role => role.name === newRole);
+            const role = guild.roles.cache.find(role => role.name === newRole);
             if (role) {
                 await member.roles.add(role);
                 user.roles = role.name;
